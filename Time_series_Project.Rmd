@@ -1,0 +1,545 @@
+---
+title: "Time Series Analysis on Crime Data"
+author: '232806010,232807013'
+date: "2024-04-25"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+### Importing libraries required
+
+```{r}
+
+library(readxl)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(tseries)
+library(forecast)
+library(MASS)
+```
+
+### Importing the data set
+
+```{r}
+data=read.csv("merged_crime_data.csv")
+head(data)
+```
+
+### Grouping the data by date
+
+```{r}
+crime_data<- data %>%
+  mutate(Date = as.Date(Date.Occurred)) %>%
+  group_by(Date) %>%
+  summarise(crime_count = n())
+head(crime_data)
+```
+
+### Re-sampling to monthly average crime
+
+```{r}
+monthly_data<-crime_data %>%
+  group_by(month = floor_date(Date, "month")) %>%
+  summarise(avg_crime = mean(crime_count, na.rm = TRUE))
+head(monthly_data)
+```
+
+### Grouping data annually
+
+```{r}
+year_data <- monthly_data%>%
+  group_by(year = year(month)) %>%
+  summarise()
+head(year_data)
+```
+
+### Creating an empty data frame with the necessary column names and assigning values to the corresponding columns
+
+```{r}
+# Create an empty data frame with the necessary column names
+annual_crime <- data.frame(matrix(ncol = nrow(year_data), nrow = 12))
+colnames(annual_crime) <- as.character(year_data$year)
+
+# Loop through the year_groups
+for (i in 1:nrow(year_groups)) {
+  year <- year_groups$year[i]          # Pulling the year from datetime object
+  if (year == 2024) {
+    break
+  }
+  series <- monthly_crime$avg_crime[year(monthly_crime$month) == year]  # Extracting data for the year
+  # Assign values to the corresponding column
+  annual_crime[, as.character(year)] <- series
+}
+head(annual_crime)
+```
+
+```{r}
+# Boxplot for last 10 years
+boxplot(annual_crime, main = "Los Angeles Volume of Crime Trend between 2010 - 2024",
+        xlab = "Years", ylab = "Monthly Average Crimes Reported", col = "lightblue", outline = FALSE)
+
+```
+### Converting the data into a time series data
+
+```{r}
+monthly_data_ts <- ts(monthly_data$avg_crime, start = c(year(monthly_data$month)[1], month(monthly_data$month)[1]), frequency = 12)
+monthly_data_ts
+```
+
+### Exploratory Data Analysis
+
+### Time series plot of crimes by day of week
+
+```{r}
+data$`Day of Week` <- wday(data$`Date.Occurred`, label = TRUE)
+data$`Day of Week` <- factor(data$`Day of Week`, levels = c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"))
+ggplot(data, aes(x = `Day of Week`)) +
+  geom_bar(fill = "lightgreen", color = "black") +
+  labs(title = "Number of Crimes by Day of Week",
+       x = "Day of Week",
+       y = "Number of Crimes") +
+  scale_x_discrete(labels = c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"))
+```
+
+### Plotting categorical count plot for crime by area
+
+```{r}
+ggplot(data, aes(x = reorder(`Area.Name`, -table(`Area.Name`)[`Area.Name`]), fill = `Area.Name`)) +
+  geom_bar() +
+  labs(title = "Los Angeles - Volume of Crime across the 21 LA Geographic Areas",
+       x = "Volume of Crime in an Area",
+       y = "Area Name") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 10))  # Adjust font size for y-axis labels
+
+```
+
+### Boxplot
+
+### Visualization of time series patterns
+
+```{r}
+autoplot(decompose(monthly_crime_ts))
+```
+
+### ACF Plot
+
+```{r}
+Acf(monthly_crime_ts, main = "Autocorrelation Function (ACF) for Average Crime")
+```
+
+### PACF Plot
+
+```{r}
+Pacf(monthly_crime_ts, main = "Partial Autocorrelation Function (PACF) for Average Crime")
+```
+
+### Splitting the data set into train and test data
+
+```{r}
+#train data 
+crime_train=ts(monthly_data_ts,start=c(2010,1),end=c(2019,12),frequency = 12)
+crime_train 
+
+```
+
+```{r}
+#test data 
+crime_test=ts(monthly_data_ts,start=c(2020,1),end=c(2024,4),frequency=12)
+crime_test
+```
+
+### Checking for stationarity
+
+```{r}
+adf_test=adf.test(crime_train)
+adf_test
+#data is not stationary 
+```
+
+### Box-Cox Plot
+
+```{r}
+boxcox_result=boxcox(crime_train~1)
+boxcox_result
+plot(boxcox_result)
+```
+
+### To find the lambda value
+
+```{r}
+lambda=boxcox_result$x[which.max(boxcox_result$y)]
+lambda
+```
+
+### Transforming the data using log transformation
+
+```{r}
+train_log=log(crime_train)
+test_log=log(crime_test)
+```
+
+### Checking for stationarity
+
+```{r}
+adf_test=adf.test(train_log)
+adf_test # data is not stationary
+```
+
+### Differencing the data and then checking the stationarity
+
+```{r}
+train_log_diff=diff(train_log)
+adf_test=adf.test(train_log_diff)
+adf_test # data is stationary
+```
+
+### To find the best ARIMA model for the log transformed data
+
+```{r}
+auto.arima(train_log)
+```
+
+### Fitting a SARIMA model on the log transformed data
+
+```{r}
+sarima_log=arima(train_log,order=c(p=1,d=1,q=3),seasonal=c(P=2,D=0,Q=0))
+sarima_log #AIC=-470.88
+```
+
+### Using the SARIMA model to predict the average crime for the next 52 months
+
+```{r}
+predicted_log_sarima=forecast(sarima_log,h=52)
+predicted_log_sarima
+```
+
+### Plotting the predicted values
+
+```{r}
+autoplot(predicted_log_sarima)
+```
+
+### Checking the accuracy
+
+```{r}
+accuracy(predicted_log_sarima,test_log)
+```
+
+### Checking the residuals
+
+```{r}
+checkresiduals(sarima_log)
+```
+
+### Checking the normality of the residuals
+
+```{r}
+shapiro.test(residuals(sarima_log))#not normal 
+```
+
+### Checking for autocorrelation between the residuals
+
+```{r}
+Box.test(residuals(sarima_log))#residuals are not autocorrelated
+```
+
+### Fitting a Holt's Winter model on the log transformed data
+
+```{r}
+holts_log=hw(train_log,h=52)
+summary(holts_log)#AIC=-229.5010
+```
+
+### Using the Holt's Winter model to predict the average crime for the next 52 months
+
+```{r}
+predicted_log_holts=forecast(holts_log)
+predicted_log_holts
+```
+
+### Plotting the predicted values
+
+```{r}
+autoplot(predicted_log_holts)
+```
+
+### Checking the accuracy
+
+```{r}
+accuracy(predicted_log_holts,test_log)
+```
+
+### Checking the residuals
+
+```{r}
+checkresiduals(holts_log)
+```
+
+### Checking for normality
+
+```{r}
+shapiro.test(residuals(holts_log))#Not notmal
+```
+
+### Checking for autocorrelation between the residuals
+
+```{r}
+Box.test(residuals(holts_log))#residuals are not autocorrelated 
+```
+
+### 
+
+### Transforming the data using square root transformation
+
+```{r}
+train_sqrt=sqrt(crime_train) 
+test_sqrt=sqrt(crime_test)
+```
+
+### Checking for stationarity
+
+```{r}
+adf_test=adf.test(train_sqrt) 
+adf_test # data is not stationary
+```
+
+### Differencing the data and then checking the stationarity
+
+```{r}
+train_sqrt_diff=diff(train_sqrt) 
+adf_test=adf.test(train_sqrt_diff) 
+adf_test # data is stationary
+```
+
+### To find the best ARIMA model for the square root transformed data
+
+```{r}
+auto.arima(train_sqrt)
+```
+
+### Fitting a SARIMA model on the square root transformed data
+
+```{r}
+sarima_sqrt=arima(train_sqrt,order=c(p=1,d=1,q=3),seasonal=c(P=2,D=0,Q=0))
+sarima_sqrt #AIC=119.58
+```
+
+### Using the SARIMA model to predict the average crime for the next 52 months
+
+```{r}
+predicted_sqrt_sarima=forecast(sarima_sqrt,h=52)
+predicted_sqrt_sarima
+```
+
+### Plotting the predicted values
+
+```{r}
+autoplot(predicted_sqrt_sarima)
+```
+
+### Checking the accuracy
+
+```{r}
+accuracy(predicted_sqrt_sarima,test_sqrt)
+```
+
+### Checking the residuals
+
+```{r}
+checkresiduals(sarima_sqrt)
+```
+
+### Checking the normality of the residuals
+
+```{r}
+shapiro.test(residuals(sarima_sqrt))#not normal 
+```
+
+### Checking for autocorrelation between the residuals
+
+```{r}
+Box.test(residuals(sarima_sqrt))#residuals are not autocorrelated
+```
+
+### Fitting a Holt's Winter model on the square root transformed data
+
+```{r}
+holts_sqrt=hw(train_sqrt,h=52)
+summary(holts_sqrt)#AIC=371.7864
+```
+
+### Using the Holt's Winter model to predict the average crime for the next 52 months
+
+```{r}
+predicted_sqrt_holts=forecast(holts_sqrt) 
+predicted_sqrt_holts
+```
+
+### Plotting the predicted values
+
+```{r}
+autoplot(predicted_sqrt_holts)
+```
+
+### Checking the accuracy
+
+```{r}
+accuracy(predicted_sqrt_holts,test_sqrt)
+```
+
+### Checking the residuals
+
+```{r}
+checkresiduals(holts_sqrt)
+```
+
+### Checking for normality
+
+```{r}
+shapiro.test(residuals(holts_sqrt))#Not notmal
+```
+
+### Checking for autocorrelation between the residuals
+
+```{r}
+Box.test(residuals(holts_sqrt))#residuals are not autocorrelated 
+```
+
+### Transforming the data using reciprocal transformation
+
+```{r}
+train_rec=(1/(crime_train))
+test_rec=(1/(crime_test))
+```
+
+### Checking for stationarity
+
+```{r}
+adf_test=adf.test(train_rec)  
+adf_test # data is not stationary
+```
+
+### Differencing the data and then checking the stationarity
+
+```{r}
+train_rec_diff=diff(train_rec)  
+adf_test=adf.test(train_rec_diff)  
+adf_test # data is stationary
+```
+
+### To find the best ARIMA model for the reciprocal transformed data
+
+```{r}
+auto.arima(train_rec)
+```
+
+### Fitting a SARIMA model on the reciprocal transformed data
+
+```{r}
+sarima_rec=arima(train_rec,order=c(p=0,d=1,q=2),seasonal=c(P=2,D=0,Q=0)) 
+sarima_rec #AIC=-1980.74
+```
+
+### Using the SARIMA model to predict the average crime for the next 52 months
+
+```{r}
+predicted_rec_sarima=forecast(sarima_rec,h=52)
+predicted_rec_sarima
+```
+
+### Plotting the predicted values
+
+```{r}
+autoplot(predicted_rec_sarima)
+```
+
+### Checking the accuracy
+
+```{r}
+accuracy(predicted_rec_sarima,test_rec)
+```
+
+### Checking the residuals
+
+```{r}
+checkresiduals(sarima_rec)
+```
+
+### Checking the normality of the residuals
+
+```{r}
+shapiro.test(residuals(sarima_rec))#not normal 
+```
+
+### Checking for autocorrelation between the residuals
+
+```{r}
+Box.test(residuals(sarima_rec))#residuals are not autocorrelated
+```
+
+### Fitting a Holt's Winter model on the reciprocal transformed data
+
+```{r}
+holts_rec=hw(train_rec,h=52) 
+summary(holts_rec)#AIC=-1626.289
+```
+
+### Using the Holt's Winter model to predict the average crime for the next 52 months
+
+```{r}
+predicted_rec_holts=forecast(holts_rec)  
+predicted_rec_holts
+```
+
+### Plotting the predicted values
+
+```{r}
+autoplot(predicted_rec_holts)
+```
+
+### Checking the accuracy
+
+```{r}
+accuracy(predicted_rec_holts,test_sqrt)
+```
+
+### Checking the residuals
+
+```{r}
+checkresiduals(holts_rec)
+```
+
+### Checking for normality
+
+```{r}
+shapiro.test(residuals(holts_rec))#residuals are  normal
+```
+
+### Checking for autocorrelation between the residuals
+
+```{r}
+Box.test(residuals(holts_rec))#residuals are autocorrelated 
+```
+
+### Using the SARIMA model on the data transformed using reciprocal transformation
+
+### Forecast for the next the next 72 months
+
+```{r}
+model=arima(train_rec,order=c(p=0,d=1,q=2),seasonal=c(P=2,D=0,Q=0))
+model
+```
+
+```{r}
+forecast_model=forecast(model,h=72)
+
+```
+
+### Plotting the forecasts
+
+```{r}
+autoplot(forecast_model)
+```
