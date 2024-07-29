@@ -1,5 +1,5 @@
 # Time Series Analysis on Crime Data 📊
-
+![crime-data-time-series](https://socialify.git.ci/navyadua/crime-data-time-series/image?language=1&owner=1&name=1&stargazers=1&theme=Light)
 ## Overview
 
 This project involves analyzing crime data through time series methods to forecast future crime rates. The analysis includes data preprocessing, exploratory data analysis (EDA), and the application of various time series modeling techniques. 🔍📈
