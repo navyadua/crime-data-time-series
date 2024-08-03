@@ -44,3 +44,7 @@ Future work may involve:
 - Integrating additional features or external variables to enhance model performance. 🔬📊
 - Applying advanced forecasting techniques or machine learning methods. 🤖🔍
 - Expanding the analysis to cover other regions or longer time periods for a broader understanding of crime trends. 🌍📅
+
+---
+
+Thank you for checking out our project!😉 We believe in creating a better world through technology⚙️, and we hope this project contributes to that goal.👍🏻
